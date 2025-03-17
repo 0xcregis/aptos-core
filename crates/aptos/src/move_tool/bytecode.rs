@@ -209,7 +209,7 @@ impl BytecodeCommand {
                     (self.decompile(bytecode_path)?, DECOMPILER_EXTENSION)
                 },
                 BytecodeCommandType::Query => {
-                    ("Query Interface Completed".to_string(), "CFG")
+                    self.query(bytecode_path)
                 },
             };
 
@@ -407,6 +407,13 @@ impl BytecodeCommand {
                 String::from_utf8(out.stderr).unwrap_or_default()
             )))
         }
+    }
+
+    fn query(&self, bytecode_path: &Path) -> (String, &str) {
+        (
+            String::from("Everything OK"),
+            "CFG"
+        )
     }
 
     fn downgrade_to_v6(&self, file_path: &Path) -> Result<Option<NamedTempFile>, CliError> {
