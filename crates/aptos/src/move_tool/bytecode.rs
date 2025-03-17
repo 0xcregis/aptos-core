@@ -66,6 +66,15 @@ pub struct Decompile {
     pub command: BytecodeCommand,
 }
 
+/// Query the Move bytecode for info like CFG and Dep graphs
+///
+#[derive(Debug, Parser)]
+pub struct Query {
+    #[clap(flatten)]
+    pub command: BytecodeCommand,
+}
+
+
 #[derive(Debug, Args)]
 pub struct BytecodeCommand {
     /// Treat input file as a script (default is to treat file as a module)
@@ -117,6 +126,7 @@ pub struct BytecodeCommandInput {
 enum BytecodeCommandType {
     Disassemble,
     Decompile,
+    Query,
 }
 
 #[async_trait]
@@ -138,6 +148,17 @@ impl CliCommand<String> for Decompile {
 
     async fn execute(mut self) -> CliTypedResult<String> {
         self.command.execute(BytecodeCommandType::Decompile).await
+    }
+}
+
+#[async_trait]
+impl CliCommand<String> for Query {
+    fn command_name(&self) -> &'static str {
+        "Query"
+    }
+
+    async fn execute(mut self) -> CliTypedResult<String> {
+        self.command.execute(BytecodeCommandType::Query).await
     }
 }
 
@@ -186,6 +207,9 @@ impl BytecodeCommand {
                 },
                 BytecodeCommandType::Decompile => {
                     (self.decompile(bytecode_path)?, DECOMPILER_EXTENSION)
+                },
+                BytecodeCommandType::Query => {
+                    ("Query Interface Completed".to_string(), "CFG")
                 },
             };
 
