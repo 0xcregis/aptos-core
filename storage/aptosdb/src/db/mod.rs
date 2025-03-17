@@ -127,6 +127,7 @@ impl AptosDB {
         max_num_nodes_per_lru_cache_shard: usize,
         internal_indexer_db: Option<InternalIndexerDB>,
     ) -> Result<Self> {
+        println!("AptosDB::open: db_paths: {db_paths:?}");
         Self::open_internal(
             &db_paths,
             readonly,
@@ -150,6 +151,7 @@ impl AptosDB {
         max_num_nodes_per_lru_cache_shard: usize,
         internal_indexer_db: Option<InternalIndexerDB>,
     ) -> Result<Self> {
+        println!("AptosDB::open_kv_only: db_paths: {db_paths:?}");
         Self::open_internal(
             &db_paths,
             readonly,
@@ -169,6 +171,7 @@ impl AptosDB {
         readonly: bool,
         max_num_nodes_per_lru_cache_shard: usize,
     ) -> Result<(LedgerDb, StateMerkleDb, StateKvDb)> {
+        println!("AptosDB::open_kv_only: db_paths: {db_paths:?}");
         let ledger_db = LedgerDb::new(db_paths.ledger_db_root_path(), rocksdb_configs, readonly)?;
         let state_kv_db = StateKvDb::new(
             db_paths,
