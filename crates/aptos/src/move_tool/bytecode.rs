@@ -31,6 +31,7 @@ use move_coverage::coverage_map::CoverageMap;
 use move_disassembler::disassembler::{Disassembler, DisassemblerOptions};
 use move_ir_types::location::Spanned;
 use move_model::metadata::{CompilationMetadata, CompilerVersion, LanguageVersion};
+use move_querier::querier::{Querier, QuerierOptions};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -66,10 +67,16 @@ pub struct Decompile {
     pub command: BytecodeCommand,
 }
 
-/// Query the Move bytecode for info like CFG and Dep graphs
+/// Query the Move bytecode for info like call graph and dependency graph
 ///
+/// For example, if you want to generate the call graphs for bytecode `example.mv`:
+/// run `aptos move query --query-action cg --bytecode-path /path/to/example.mv` (for all query options, refer to `aptos move query --help`)
 #[derive(Debug, Parser)]
 pub struct Query {
+
+    #[clap(flatten)]
+    pub options: QuerierOptions,
+
     #[clap(flatten)]
     pub command: BytecodeCommand,
 }
@@ -209,7 +216,7 @@ impl BytecodeCommand {
                     (self.decompile(bytecode_path)?, DECOMPILER_EXTENSION)
                 },
                 BytecodeCommandType::Query => {
-                    self.query(bytecode_path)
+                    (self.query(bytecode_path)?, "CFG")
                 },
             };
 
@@ -409,11 +416,14 @@ impl BytecodeCommand {
         }
     }
 
-    fn query(&self, bytecode_path: &Path) -> (String, &str) {
-        (
-            String::from("Everything OK"),
-            "CFG"
-        )
+    fn query(&self, bytecode_path: &Path) -> Result<String, CliError> {
+
+        let query_options = QuerierOptions::parse();
+
+        let mut querier = Querier::new(query_options);
+
+        querier.query().map_err(|err| CliError::UnexpectedError(format!("Unable to disassemble: {}", err)))
+
     }
 
     fn downgrade_to_v6(&self, file_path: &Path) -> Result<Option<NamedTempFile>, CliError> {

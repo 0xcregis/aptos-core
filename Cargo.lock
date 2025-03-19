@@ -362,6 +362,7 @@ dependencies = [
  "move-model",
  "move-package",
  "move-prover-boogie-backend",
+ "move-querier",
  "move-symbol-pool",
  "move-unit-test",
  "move-vm-runtime",
@@ -11415,6 +11416,14 @@ dependencies = [
  "move-command-line-common",
  "prettydiff",
  "regex",
+]
+
+[[package]]
+name = "move-querier"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.21",
 ]
 
 [[package]]

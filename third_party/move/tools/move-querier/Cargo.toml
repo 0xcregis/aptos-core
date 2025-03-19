@@ -1,0 +1,15 @@
+[package]
+name = "move-querier"
+version = "0.1.0"
+authors = ["Aptos Foundations"]
+description = "Query basic info like call graphs and dependency graphs of a move bytecode"
+license = "Apache-2.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+
+[features]
+default = []
