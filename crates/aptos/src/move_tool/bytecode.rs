@@ -70,7 +70,7 @@ pub struct Decompile {
 /// Query the Move bytecode for info like call graph and dependency graph
 ///
 /// For example, if you want to generate the call graphs for bytecode `example.mv`:
-/// run `aptos move query --query-action cg --bytecode-path /path/to/example.mv` (for all query options, refer to `aptos move query --help`)
+/// run `aptos move query --query-action cg --bytecode-path /path/to/example.mv` (for all available query actions, refer to `aptos move query --help`)
 #[derive(Debug, Parser)]
 pub struct Query {
 

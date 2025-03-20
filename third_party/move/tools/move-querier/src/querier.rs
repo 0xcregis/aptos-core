@@ -9,11 +9,11 @@ use clap::Parser;
 /// Holds the actions that we support while querying the bytecode.
 #[derive(Debug, Default, Parser)]
 pub struct QuerierOptions {
-    /// Actions you would like to take during the query. Avalation actions include:
+    /// Actions you would like to take during the query. Available actions include:
     ///
     /// (1) `cg`: constructing the call graph(s) for the bytecode;
     /// (2) `dep`: constructing the dependency graph for the bytecode
-    #[clap(long)]
+    #[clap(long, required = true)]
     pub query_action: Option<String>,
 }
 
