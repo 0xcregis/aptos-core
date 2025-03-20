@@ -23,7 +23,7 @@ This mode is integrated into the `aptos move` toolchain in the same way as the `
 > - `cg`: constructing the call graph(s) for the bytecode
 > - `dep`: constructing the dependency graph for the bytecode
 
-**Design**: It reuses the uniform interfaces from [bytecode.rs](../../../../crates/aptos/src/move_tool/bytecode.rs) to support command line parsing and redirect the execution to the `query` function implemented [here](./src/querier.rs) in this tool. 
+**Design**: It reuses the uniform interfaces from [bytecode.rs](../../../../crates/aptos/src/move_tool/bytecode.rs) to support command line parsing and redirect the execution to the `query()` function implemented in this tool (see [querier.rs](./src/querier.rs)). 
 
 # Standalone Mode
 

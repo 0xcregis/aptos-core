@@ -5,6 +5,12 @@
 use anyhow::Result;
 use clap::Parser;
 
+use std::{
+    fs,
+    path::{Component, Path, PathBuf},
+    process::Command,
+    str,
+};
 
 /// Holds the actions that we support while querying the bytecode.
 #[derive(Debug, Default, Parser)]
@@ -24,14 +30,15 @@ pub struct Querier {
 
 
 impl Querier {
-    /// Creates a new decompiler.
+    /// Creates a new querier.
     pub fn new(options: QuerierOptions) -> Self {
         Self {
             options,
         }
     }
 
-    pub fn query(&self) -> Result<String> {
+    pub fn query(&self, bytecode_path: &Path) -> Result<String> {
         Ok(self.options.query_action.clone().unwrap())
     }
+
 }

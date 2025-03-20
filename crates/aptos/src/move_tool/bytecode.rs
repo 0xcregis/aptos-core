@@ -43,6 +43,9 @@ use tempfile::NamedTempFile;
 
 const DISASSEMBLER_EXTENSION: &str = "mv.asm";
 const DECOMPILER_EXTENSION: &str = "mv.move";
+const CG_EXTENSION: &str = "mv.cg";
+const DEP_EXTENSION: &str = "mv.dep";
+const UNKNOWN_EXTENSION: &str = "mv.unknown";
 
 /// Disassemble the Move bytecode pointed to in the textual representation
 /// of Move bytecode.
@@ -216,7 +219,8 @@ impl BytecodeCommand {
                     (self.decompile(bytecode_path)?, DECOMPILER_EXTENSION)
                 },
                 BytecodeCommandType::Query => {
-                    (self.query(bytecode_path)?, "CFG")
+                    let (output, extension) = self.query(bytecode_path);
+                    (output?, extension)
                 },
             };
 
@@ -416,14 +420,26 @@ impl BytecodeCommand {
         }
     }
 
-    fn query(&self, bytecode_path: &Path) -> Result<String, CliError> {
+
+    /// Query the bytecode to return knowledge desired by the specified --query-action
+    fn query(&self, bytecode_path: &Path) -> (Result<String, CliError>, &str){
 
         let query_options = QuerierOptions::parse();
 
-        let mut querier = Querier::new(query_options);
+        let extension = match query_options.query_action.as_deref() {
+            Some("cg") => CG_EXTENSION,
+            Some("dep") => DEP_EXTENSION,
+            _ => UNKNOWN_EXTENSION,
+        };
 
-        querier.query().map_err(|err| CliError::UnexpectedError(format!("Unable to disassemble: {}", err)))
+        let querier = Querier::new(query_options);
 
+        (
+            //the frist return value: the query results
+            querier.query(bytecode_path).map_err(|err| CliError::UnexpectedError(format!("Unable to complete the query action: {}", err))),
+            //the second return value: the s extension to save the query results
+            extension
+        )
     }
 
     fn downgrade_to_v6(&self, file_path: &Path) -> Result<Option<NamedTempFile>, CliError> {
