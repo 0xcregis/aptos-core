@@ -3,24 +3,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use anyhow::Result;
-use clap::Parser;
 
-use std::{
-    fs,
-    path::{Component, Path, PathBuf},
-    process::Command,
-    str,
-};
+use std::path::Path;
 
 /// Holds the actions that we support while querying the bytecode.
-#[derive(Debug, Default, Parser)]
+#[derive(Debug, Default)]
 pub struct QuerierOptions {
     /// Actions you would like to take during the query. Available actions include:
     ///
     /// (1) `cg`: constructing the call graph(s) for the bytecode;
     /// (2) `dep`: constructing the dependency graph for the bytecode
-    #[clap(long, required = true)]
-    pub query_action: Option<String>,
+    pub action: Option<String>,
 }
 
 /// Represents an instance of a querier. The querier can ...
@@ -37,8 +30,9 @@ impl Querier {
         }
     }
 
+    ///Main interface to run the query actions
     pub fn query(&self, bytecode_path: &Path) -> Result<String> {
-        Ok(self.options.query_action.clone().unwrap())
+        Ok("cfg".to_string())
     }
 
 }

@@ -45,7 +45,6 @@ const DISASSEMBLER_EXTENSION: &str = "mv.asm";
 const DECOMPILER_EXTENSION: &str = "mv.move";
 const CG_EXTENSION: &str = "mv.cg";
 const DEP_EXTENSION: &str = "mv.dep";
-const UNKNOWN_EXTENSION: &str = "mv.unknown";
 
 /// Disassemble the Move bytecode pointed to in the textual representation
 /// of Move bytecode.
@@ -76,10 +75,6 @@ pub struct Decompile {
 /// run `aptos move query --query-action cg --bytecode-path /path/to/example.mv` (for all available query actions, refer to `aptos move query --help`)
 #[derive(Debug, Parser)]
 pub struct Query {
-
-    #[clap(flatten)]
-    pub options: QuerierOptions,
-
     #[clap(flatten)]
     pub command: BytecodeCommand,
 }
@@ -113,6 +108,11 @@ pub struct BytecodeCommand {
     /// only print out the metadata and bytecode version of the target bytecode
     #[clap(long)]
     pub print_metadata_only: bool,
+
+      /// Secondary, optional sub-sub-commands passed to different tools (e.g., `cg` for `query`)
+      #[clap(flatten)]
+      secondary: PeripheralCommand,
+
 }
 
 /// Allows to ensure that either one of both is selected (via  the `group` attribute).
@@ -130,6 +130,15 @@ pub struct BytecodeCommandInput {
     /// Alternatively to a package path, path to a single bytecode file which should be processed.
     #[clap(long)]
     pub bytecode_path: Option<PathBuf>,
+}
+
+/// Secondary, optionl, tool-specific sub-sub-commands
+#[derive(Debug, Parser)]
+pub struct PeripheralCommand {
+    /// Actions to take when `query` a bytecode file.
+    /// Mandated for the `query` tool, not needed for others.
+    #[clap(long)]
+    query_action: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -219,8 +228,8 @@ impl BytecodeCommand {
                     (self.decompile(bytecode_path)?, DECOMPILER_EXTENSION)
                 },
                 BytecodeCommandType::Query => {
-                    let (output, extension) = self.query(bytecode_path);
-                    (output?, extension)
+                    let (output, extension) = self.query(bytecode_path)?;
+                    (output, extension)
                 },
             };
 
@@ -422,24 +431,27 @@ impl BytecodeCommand {
 
 
     /// Query the bytecode to return knowledge desired by the specified --query-action
-    fn query(&self, bytecode_path: &Path) -> (Result<String, CliError>, &str){
+    fn query(&self, bytecode_path: &Path) -> Result<(String, &str), CliError>{
 
-        let query_options = QuerierOptions::parse();
+        // Check if --query-action is supported
+        let query_action = self.secondary.query_action.as_deref();
 
-        let extension = match query_options.query_action.as_deref() {
+        println!("{:?}", query_action);
+
+        let extension = match query_action {
             Some("cg") => CG_EXTENSION,
             Some("dep") => DEP_EXTENSION,
-            _ => UNKNOWN_EXTENSION,
+            _ => "UNKNOWN",
         };
 
-        let querier = Querier::new(query_options);
+        // Bytecode cannot be read
+        let bytecode_bytes = read_from_file(bytecode_path)?;
 
-        (
-            //the frist return value: the query results
-            querier.query(bytecode_path).map_err(|err| CliError::UnexpectedError(format!("Unable to complete the query action: {}", err))),
-            //the second return value: the s extension to save the query results
-            extension
-        )
+       // let querier = Querier::new(query_options);
+
+        // let res = querier.query(bytecode_path)?;
+
+        Ok(("hello".to_string(), extension))
     }
 
     fn downgrade_to_v6(&self, file_path: &Path) -> Result<Option<NamedTempFile>, CliError> {
