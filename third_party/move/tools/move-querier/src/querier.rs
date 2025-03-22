@@ -3,17 +3,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use anyhow::Result;
+use clap::Args;
 
 use std::path::Path;
 
-/// Holds the actions that we support while querying the bytecode.
-#[derive(Debug, Default)]
+/// Holds the commands that we support while querying the bytecode.
+#[derive(Copy, Clone, Debug, Args)]
+#[group(id = "cmd", required = false, multiple = false)]
 pub struct QuerierOptions {
-    /// Actions you would like to take during the query. Available actions include:
-    ///
-    /// (1) `cg`: constructing the call graph(s) for the bytecode;
-    /// (2) `dep`: constructing the dependency graph for the bytecode
-    pub action: Option<String>,
+    #[arg(long, group = "cmd")]
+    dump_call_graph: bool,
+
+    #[arg(long, group = "cmd")]
+    dump_dep_graph: bool,
 }
 
 /// Represents an instance of a querier. The querier can ...
