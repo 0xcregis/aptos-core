@@ -43,8 +43,7 @@ use tempfile::NamedTempFile;
 
 const DISASSEMBLER_EXTENSION: &str = "mv.asm";
 const DECOMPILER_EXTENSION: &str = "mv.move";
-const CG_EXTENSION: &str = "mv.cg";
-const DEP_EXTENSION: &str = "mv.dep";
+
 
 /// Disassemble the Move bytecode pointed to in the textual representation
 /// of Move bytecode.
@@ -434,20 +433,23 @@ impl BytecodeCommand {
     }
 
 
-    /// Query the bytecode to return knowledge desired by the specified --query-cmd
-    fn query(&self, bytecode_path: &Path) -> Result<(String, &str), CliError>{
+    /// Query the bytecode to return knowledge desired by the specified query command
+    fn query(&self, bytecode_path: &Path) -> Result<(String, &'static str), CliError>{
 
-        // Check if --query-cmd is supported
+        // Check if query command is provided
         let query_option = self.secondary_options.query_option.clone();
+        if !query_option.has_any_true(){
+            return Err(CliError::CommandArgumentError(
+                "No desired command (e.g., --dump-call-graph | --dump-dep-gragh) is provided".to_string()
+            ));
+        }
+        // Get a proper extension for saving the query results
+        let extension = query_option.extension();
 
-        // Bytecode cannot be read
         let bytecode_bytes = read_from_file(bytecode_path)?;
-
-       // let querier = Querier::new(query_options);
-
-        // let res = querier.query(bytecode_path)?;
-
-        Ok(("hello".to_string(), "unknown"))
+        let querier = Querier::new(query_option, bytecode_bytes);
+        let res = querier.query()?;
+        Ok((res, extension))
     }
 
     fn downgrade_to_v6(&self, file_path: &Path) -> Result<Option<NamedTempFile>, CliError> {
