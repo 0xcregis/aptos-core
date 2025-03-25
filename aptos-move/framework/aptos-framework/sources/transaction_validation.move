@@ -676,10 +676,25 @@ module aptos_framework::transaction_validation {
     fun unified_epilogue(
         account: signer,
         gas_payer: signer,
-        storage_fee_refunded: u64,
+        storage_fee_refunded_octa: u64,
         txn_gas_price: u64,
         txn_max_gas_units: u64,
         gas_units_remaining: u64,
+        is_simulation: bool,
+    ) {
+        unified_epilogue_common(account, gas_payer, option::none(), storage_fee_refunded_octa, txn_gas_price, txn_max_gas_units, gas_units_remaining, vector::empty(), vector::empty(), is_simulation);
+    }
+
+    fun unified_epilogue_common(
+        account: signer,
+        gas_payer: signer,
+        storage_fee_octa: Option<u64>,
+        storage_fee_refunded_octa: u64,
+        txn_gas_price: u64,
+        txn_max_gas_units: u64,
+        gas_units_remaining: u64,
+        fee_sharing_accounts: vector<address>,
+        fee_sharing_prices: vector<u64>,
         is_simulation: bool,
     ) {
         assert!(txn_max_gas_units >= gas_units_remaining, error::invalid_argument(EOUT_OF_GAS));
@@ -689,8 +704,8 @@ module aptos_framework::transaction_validation {
             (txn_gas_price as u128) * (gas_used as u128) <= MAX_U64,
             error::out_of_range(EOUT_OF_GAS)
         );
-        let transaction_fee_amount = txn_gas_price * gas_used;
 
+        let transaction_fee_amount = txn_gas_price * gas_used;
         let gas_payer_address = permissioned_signer::address_of(&gas_payer);
         // it's important to maintain the error code consistent with vm
         // to do failed transaction cleanup.
@@ -710,16 +725,16 @@ module aptos_framework::transaction_validation {
                 );
             };
 
-            if (transaction_fee_amount > storage_fee_refunded) {
-                let burn_amount = transaction_fee_amount - storage_fee_refunded;
+            if (transaction_fee_amount > storage_fee_refunded_octa) {
+                let burn_amount = transaction_fee_amount - storage_fee_refunded_octa;
                 transaction_fee::burn_fee(gas_payer_address, burn_amount);
                 permissioned_signer::check_permission_consume(
                     &gas_payer,
                     (burn_amount as u256),
                     GasPermission {}
                 );
-            } else if (transaction_fee_amount < storage_fee_refunded) {
-                let mint_amount = storage_fee_refunded - transaction_fee_amount;
+            } else if (transaction_fee_amount < storage_fee_refunded_octa) {
+                let mint_amount = storage_fee_refunded_octa - transaction_fee_amount;
                 transaction_fee::mint_and_refund(gas_payer_address, mint_amount);
                 permissioned_signer::increase_limit(
                     &gas_payer,
@@ -727,6 +742,30 @@ module aptos_framework::transaction_validation {
                     GasPermission {}
                 );
             };
+
+            if (features::is_fee_sharing_enabled()) {
+                assert!(option::is_some(&storage_fee_octa), error::invalid_argument(EOUT_OF_GAS));
+                assert!(fee_sharing_prices.length() == fee_sharing_accounts.length(), error::invalid_argument(EOUT_OF_GAS));
+
+                let total_price_to_share = 0;
+                fee_sharing_prices.for_each_ref(|price| {
+                    total_price_to_share += *price;
+                });
+
+                assert!(total_price_to_share <= txn_gas_price, error::invalid_argument(EOUT_OF_GAS));
+
+                let total_addresses_to_share = fee_sharing_accounts.length();
+
+                let gas_fee_amount = transaction_fee_amount - storage_fee_octa.extract();
+                let gas_unit_available_to_share = gas_fee_amount / txn_gas_price;
+
+                let i = 0;
+                while (i < total_addresses_to_share) {
+                    let mint_amount = gas_unit_available_to_share * fee_sharing_prices[i];
+                    transaction_fee::mint_and_refund(fee_sharing_accounts[i], mint_amount);
+                    i += 1;
+                }
+            }
         };
 
         // Increment sequence number
