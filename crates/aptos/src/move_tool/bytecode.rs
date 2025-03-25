@@ -447,7 +447,7 @@ impl BytecodeCommand {
         let extension = query_option.extension();
 
         let bytecode_bytes = read_from_file(bytecode_path)?;
-        let querier = Querier::new(query_option, bytecode_bytes);
+        let mut querier = Querier::new(query_option, bytecode_bytes);
         let res = querier.query()?;
         Ok((res, extension))
     }

@@ -10,7 +10,9 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+move-binary-format = { workspace = true }
 move-bytecode-source-map = { workspace = true }
+petgraph = { workspace = true }
 
 [features]
 default = []
