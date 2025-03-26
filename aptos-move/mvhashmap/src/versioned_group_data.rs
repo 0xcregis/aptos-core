@@ -9,7 +9,8 @@ use crate::{
     versioned_data::Entry as SizeEntry,
     VersionedData,
 };
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
+use aptos_infallible::Mutex;
 use aptos_types::{
     error::{code_invariant_error, PanicError},
     write_set::{TransactionWrite, WriteOpKind},
@@ -22,7 +23,7 @@ use serde::Serialize;
 use std::{
     collections::{
         btree_map::{BTreeMap, Entry::Vacant},
-        HashSet,
+        BTreeSet, HashSet,
     },
     fmt::Debug,
     hash::Hash,
@@ -31,7 +32,10 @@ use std::{
 
 #[derive(Default)]
 struct VersionedGroupSize {
-    size_entries: BTreeMap<ShiftedTxnIndex, SizeEntry<ResourceGroupSize>>,
+    size_entries: BTreeMap<
+        ShiftedTxnIndex,
+        SizeEntry<(ResourceGroupSize, Mutex<BTreeSet<(TxnIndex, Incarnation)>>)>,
+    >,
     // Determines whether it is safe for size queries to read the value from an entry marked as
     // ESTIMATE. The heuristic checks on every write, whether the same size would be returned
     // after the respective write took effect. Once set, the flag remains set to true.
@@ -102,7 +106,7 @@ impl<
                 )
             })?;
 
-            entry.insert(SizeEntry::new(group_size));
+            entry.insert(SizeEntry::new((group_size, Mutex::new(BTreeSet::new()))));
 
             let mut superset_tags = self.group_tags.entry(group_key.clone()).or_default();
             for (tag, value) in base_values.into_iter() {
@@ -130,6 +134,72 @@ impl<
         );
     }
 
+    fn data_write_impl<const V2: bool>(
+        &self,
+        group_key: K,
+        txn_idx: TxnIndex,
+        incarnation: Incarnation,
+        values: impl IntoIterator<Item = (T, (V, Option<Arc<MoveTypeLayout>>))>,
+        prev_tags: &mut HashSet<T>,
+    ) -> Result<(bool, BTreeSet<(TxnIndex, Incarnation)>), PanicError> {
+        let mut ret_v1 = false;
+        let mut ret_v2 = BTreeSet::new();
+        let mut tags_to_write = vec![];
+
+        {
+            let superset_tags = self.group_tags.get(&group_key).ok_or_else(|| {
+                // Due to read-before-write.
+                code_invariant_error("Group (tags) must be initialized to write to")
+            })?;
+
+            for (tag, (value, layout)) in values.into_iter() {
+                if !superset_tags.contains(&tag) {
+                    tags_to_write.push(tag.clone());
+                }
+
+                ret_v1 |= !prev_tags.remove(&tag);
+
+                if V2 {
+                    ret_v2.extend(self.values.write_v2::<false>(
+                        (group_key.clone(), tag),
+                        txn_idx,
+                        incarnation,
+                        Arc::new(value),
+                        layout,
+                    ));
+                } else {
+                    self.values.write(
+                        (group_key.clone(), tag),
+                        txn_idx,
+                        incarnation,
+                        Arc::new(value),
+                        layout,
+                    );
+                }
+            }
+        }
+
+        for prev_tag in prev_tags.iter() {
+            // TODO(BlockSTMv2): Equivalent keys on top of DashMap.
+            let key = (group_key.clone(), prev_tag.clone());
+            if V2 {
+                ret_v2.extend(self.values.remove_v2::<false>(&key, txn_idx));
+            } else {
+                self.values.remove(&key, txn_idx);
+            }
+        }
+
+        if !tags_to_write.is_empty() {
+            let mut superset_tags = self
+                .group_tags
+                .get_mut(&group_key)
+                .expect("Group must be initialized");
+            superset_tags.extend(tags_to_write);
+        }
+
+        Ok((ret_v1, ret_v2))
+    }
+
     /// Writes new resource group values (and size) specified by tag / value pair
     /// iterators. Returns true if a new tag is written compared to the previous
     /// incarnation (set of previous tags provided as a parameter), or if the size
@@ -144,49 +214,17 @@ impl<
         size: ResourceGroupSize,
         mut prev_tags: HashSet<T>,
     ) -> Result<bool, PanicError> {
-        let mut ret = false;
-        let mut tags_to_write = vec![];
-
-        {
-            let superset_tags = self.group_tags.get(&group_key).ok_or_else(|| {
-                // Due to read-before-write.
-                code_invariant_error("Group (tags) must be initialized to write to")
-            })?;
-
-            for (tag, (value, layout)) in values.into_iter() {
-                if !superset_tags.contains(&tag) {
-                    tags_to_write.push(tag.clone());
-                }
-
-                ret |= !prev_tags.remove(&tag);
-
-                self.values.write(
-                    (group_key.clone(), tag),
-                    txn_idx,
-                    incarnation,
-                    Arc::new(value),
-                    layout,
-                );
-            }
-        }
-
-        for prev_tag in prev_tags {
-            let key = (group_key.clone(), prev_tag);
-            self.values.remove(&key, txn_idx);
-        }
-
-        if !tags_to_write.is_empty() {
-            let mut superset_tags = self
-                .group_tags
-                .get_mut(&group_key)
-                .expect("Group must be initialized");
-            superset_tags.extend(tags_to_write);
-        }
-
         let mut group_sizes = self.group_sizes.get_mut(&group_key).ok_or_else(|| {
             // Due to read-before-write.
             code_invariant_error("Group (sizes) must be initialized to write to")
         })?;
+        let (mut ret, _) = self.data_write_impl::<false>(
+            group_key.clone(),
+            txn_idx,
+            incarnation,
+            values,
+            &mut prev_tags,
+        )?;
 
         if !(group_sizes.size_has_changed && ret) {
             let (size_changed, update_flag) = group_sizes
@@ -198,7 +236,7 @@ impl<
                 })
                 .map(|(idx, prev_size)| {
                     (
-                        prev_size.value != size,
+                        prev_size.value.0 != size,
                         // Update the size_has_changed flag if the entry isn't the base value
                         // (which may be non-existent) or if the incarnation > 0.
                         *idx != ShiftedTxnIndex::zero_idx() || incarnation > 0,
@@ -213,9 +251,55 @@ impl<
             }
         }
 
-        group_sizes
-            .size_entries
-            .insert(ShiftedTxnIndex::new(txn_idx), SizeEntry::new(size));
+        group_sizes.size_entries.insert(
+            ShiftedTxnIndex::new(txn_idx),
+            SizeEntry::new((size, Mutex::new(BTreeSet::new()))),
+        );
+
+        Ok(ret)
+    }
+
+    pub fn write_v2(
+        &self,
+        group_key: K,
+        txn_idx: TxnIndex,
+        incarnation: Incarnation,
+        values: impl IntoIterator<Item = (T, (V, Option<Arc<MoveTypeLayout>>))>,
+        size: ResourceGroupSize,
+        mut prev_tags: HashSet<T>,
+    ) -> Result<BTreeSet<(TxnIndex, Incarnation)>, PanicError> {
+        let mut group_sizes = self.group_sizes.get_mut(&group_key).ok_or_else(|| {
+            // Due to read-before-write.
+            code_invariant_error("Group (sizes) must be initialized to write to")
+        })?;
+        let (_, mut ret) = self.data_write_impl::<false>(
+            group_key,
+            txn_idx,
+            incarnation,
+            values,
+            &mut prev_tags,
+        )?;
+
+        let mut store_deps = BTreeSet::new();
+        if let Some((_, size_entry)) = group_sizes.size_entries
+            .range(..=ShiftedTxnIndex::new(txn_idx))
+            .next_back() {
+
+                let mut deps = size_entry.value.1.lock();
+                let new_deps = deps.split_off(&(txn_idx + 1, 0));
+
+            if size_entry.value.0 == size {
+                // Validation passed.
+                store_deps = new_deps;
+            } else {
+                ret.extend(new_deps)
+            }
+        }
+
+        group_sizes.size_entries.insert(
+            ShiftedTxnIndex::new(txn_idx),
+            SizeEntry::new((size, Mutex::new(store_deps))),
+        );
 
         Ok(ret)
     }
@@ -261,18 +345,14 @@ impl<
     /// information (None if storage/pre-block version).
     /// If the layout of the resource is current UnSet, this function sets the layout of the
     /// group to the provided layout.
-    pub fn fetch_tagged_data(
+    pub fn convert_tagged_data(
         &self,
+        data_value: anyhow::Result<MVDataOutput<V>, MVDataError>,
         group_key: &K,
-        tag: &T,
-        txn_idx: TxnIndex,
     ) -> Result<(Version, ValueWithLayout<V>), MVGroupError> {
-        let key = (group_key.clone(), tag.clone());
-        let initialized = self.group_sizes.contains_key(group_key);
-
-        match self.values.fetch_data(&key, txn_idx) {
+        match data_value {
             Ok(MVDataOutput::Versioned(version, value)) => Ok((version, value)),
-            Err(MVDataError::Uninitialized) => Err(if initialized {
+            Err(MVDataError::Uninitialized) => Err(if self.group_sizes.contains_key(group_key) {
                 MVGroupError::TagNotFound
             } else {
                 MVGroupError::Uninitialized
@@ -284,6 +364,29 @@ impl<
                 unreachable!("Not using aggregatorV1")
             },
         }
+    }
+
+    pub fn fetch_tagged_data(
+        &self,
+        group_key: &K,
+        tag: &T,
+        txn_idx: TxnIndex,
+    ) -> Result<(Version, ValueWithLayout<V>), MVGroupError> {
+        let key = (group_key.clone(), tag.clone());
+        let data_value = self.values.fetch_data(&key, txn_idx);
+        self.convert_tagged_data(data_value, group_key)
+    }
+
+    pub fn fetch_tagged_data_v2(
+        &self,
+        group_key: &K,
+        tag: &T,
+        txn_idx: TxnIndex,
+        incarnation: Incarnation,
+    ) -> Result<(Version, ValueWithLayout<V>), MVGroupError> {
+        let key = (group_key.clone(), tag.clone());
+        let data_value = self.values.fetch_data_v2(&key, txn_idx, incarnation);
+        self.convert_tagged_data(data_value, group_key)
     }
 
     pub fn get_group_size(
@@ -302,10 +405,29 @@ impl<
                             idx.idx().expect("May not depend on storage version"),
                         ))
                     } else {
-                        Ok(size.value)
+                        Ok(size.value.0)
                     }
                 })
                 .unwrap_or(Err(MVGroupError::Uninitialized)),
+            None => Err(MVGroupError::Uninitialized),
+        }
+    }
+
+    pub fn get_group_size_v2(
+        &self,
+        group_key: &K,
+        txn_idx: TxnIndex,
+        incarnation: Incarnation,
+    ) -> Result<ResourceGroupSize, MVGroupError> {
+        match self.group_sizes.get(group_key) {
+            Some(g) => g
+                .size_entries
+                .range(ShiftedTxnIndex::zero_idx()..ShiftedTxnIndex::new(txn_idx))
+                .next_back()
+                .map_or(Err(MVGroupError::Uninitialized), |(_, size)| {
+                    size.value.1.lock().insert((txn_idx, incarnation));
+                    Ok(size.value.0)
+                }),
             None => Err(MVGroupError::Uninitialized),
         }
     }
@@ -336,7 +458,7 @@ impl<
         &self,
         group_key: &K,
         txn_idx: TxnIndex,
-    ) -> anyhow::Result<(Vec<(T, ValueWithLayout<V>)>, ResourceGroupSize)> {
+    ) -> Result<(Vec<(T, ValueWithLayout<V>)>, ResourceGroupSize), PanicError> {
         let superset_tags = self
             .group_tags
             .get(group_key)
@@ -351,18 +473,18 @@ impl<
                         .then(|| (tag, value.clone()))),
                     Err(MVGroupError::TagNotFound) => Ok(None),
                     Err(e) => {
-                        bail!("Unexpected error in finalize group fetching value {:?}", e)
+                        Err(code_invariant_error(format!("Unexpected error in finalize group fetching value {:?}", e)))
                     },
                 },
             )
-            .collect::<anyhow::Result<Vec<_>>>()?
+            .collect::<Result<Vec<_>, PanicError>>()?
             .into_iter()
             .flatten()
             .collect();
         Ok((
             committed_group,
             self.get_group_size(group_key, txn_idx + 1)
-                .map_err(|e| anyhow!("Unexpected error in finalize group get size {:?}", e))?,
+                .map_err(|e| code_invariant_error(format!("Unexpected error in finalize group get size {:?}", e)))?,
         ))
     }
 }
@@ -456,7 +578,8 @@ mod test {
                     .size_entries
                     .get(&ShiftedTxnIndex::new(idx))
                     .unwrap()
-                    .value,
+                    .value
+                    .0,
                 size
             );
         };

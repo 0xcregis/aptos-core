@@ -1073,13 +1073,14 @@ where
 
         let finalized_groups = groups_to_finalize!(last_input_output, txn_idx)
             .map(|((group_key, metadata_op), is_read_needing_exchange)| {
-                let finalize_group = versioned_cache
+                let (finalized_group, group_size) = versioned_cache
                     .group_data()
-                    .finalize_group(&group_key, txn_idx);
+                    .finalize_group(&group_key, txn_idx)?;
 
                 map_finalized_group::<T>(
                     group_key,
-                    finalize_group,
+                    finalized_group,
+                    group_size,
                     metadata_op,
                     is_read_needing_exchange,
                 )
@@ -2036,10 +2037,10 @@ where
                             .map(|((group_key, metadata_op), is_read_needing_exchange)| {
                                 let (group_ops_iter, group_size) =
                                     unsync_map.finalize_group(&group_key);
-                                let finalized_group = Ok((group_ops_iter.collect(), group_size));
                                 map_finalized_group::<T>(
                                     group_key,
-                                    finalized_group,
+                                    group_ops_iter.collect(),
+                                    group_size,
                                     metadata_op,
                                     is_read_needing_exchange,
                                 )

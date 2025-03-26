@@ -166,7 +166,7 @@ impl<V: TransactionWrite> VersionedValue<V> {
                         false
                     };
                 }
-                affected_deps.extend(new_deps);
+                affected_deps = new_deps;
             }
         }
         (affected_deps, validation_result)
