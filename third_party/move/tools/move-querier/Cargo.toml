@@ -13,6 +13,7 @@ clap = { workspace = true, features = ["derive"] }
 move-binary-format = { workspace = true }
 move-bytecode-source-map = { workspace = true }
 petgraph = { workspace = true }
+thiserror = { workspace = true }
 
 [features]
 default = []

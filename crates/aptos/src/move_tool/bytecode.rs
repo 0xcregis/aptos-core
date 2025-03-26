@@ -68,13 +68,13 @@ pub struct Decompile {
     pub command: BytecodeCommand,
 }
 
-/// Query the Move bytecode for info like call graph and dependency graph
+///
+/// Query the Move bytecode for info like call graph and bytecode type
 ///
 /// For example, if you want to generate the call graphs for bytecode `example.mv`:
 /// run `aptos move query [query comamnd] --bytecode-path /path/to/example.mv`.  Available query commands include:
-///
 /// (1) `--dump-call-graph`: constructing the call graph(s) for the bytecode;
-/// (2) `--dump-dep-graph`: constructing the dependency graph for the bytecode
+/// (2) `--check-bytecode-type`: checking the type of the bytecode (`module`, `script`, or `unknown`)
 #[derive(Debug, Parser)]
 pub struct Query {
     #[clap(flatten)]
@@ -440,14 +440,14 @@ impl BytecodeCommand {
         let query_option = self.secondary_options.query_option.clone();
         if !query_option.has_any_true(){
             return Err(CliError::CommandArgumentError(
-                "No desired command (e.g., --dump-call-graph | --dump-dep-gragh) is provided".to_string()
+                "No desired command (e.g., --dump-call-graph | --check-bytecode-type) is provided".to_string()
             ));
         }
         // Get a proper extension for saving the query results
         let extension = query_option.extension();
-
+        // Query with specified command
         let bytecode_bytes = read_from_file(bytecode_path)?;
-        let mut querier = Querier::new(query_option, bytecode_bytes);
+        let querier = Querier::new(query_option, bytecode_bytes);
         let res = querier.query()?;
         Ok((res, extension))
     }

@@ -2,18 +2,31 @@
 // Copyright (c) The Move Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Result};
 use clap::Args;
 use move_binary_format::{
-    binary_views::BinaryIndexedView,
-    file_format::{CompiledScript, FunctionDefinitionIndex, FunctionHandle, FunctionHandleIndex, TableIndex,},
-    CompiledModule,
+    access::ScriptAccess, binary_views::BinaryIndexedView, file_format::{Bytecode, CodeUnit, CompiledScript, FunctionDefinitionIndex, FunctionHandle, FunctionHandleIndex, IdentifierIndex, SignatureToken, TableIndex}, CompiledModule
 };
-use petgraph::graphmap::DiGraphMap;
+use petgraph::dot::{Dot, Config};
+use petgraph::graph::{DiGraph, NodeIndex};
+use std::collections::HashMap;
+use std::hash::Hash;
 
+//Constants for result file extension
 const CG_EXTENSION: &str = "mv.cg.dot";
-const DEP_EXTENSION: &str = "mv.dep.dot";
+const TYPE_EXTENSION: &str = "mv.type";
 const UNKNOWN_EXTENSION: &str = "mv.unknown";
+
+//Constants for bytecode type
+const SCRIPT_CODE: &str = "script";
+const MODULE_CODE: &str = "module";
+const UNKNOWN_CODE: &str = "unknown";
+
+//Constants for function signatures
+const MAIN_FUNCTION: &str = "main";
+const SCRIPT_MODULE: &str = "self";
+const ENTRY_MODIFIER: &str = "entry";
+const EMPTY: &str = "";
 
 /// Holds the commands that we support while querying the bytecode.
 #[derive(Copy, Clone, Debug, Args)]
@@ -22,43 +35,33 @@ pub struct QuerierOptions {
     /// Dump the call graph(s) from bytecode, which should only be used together with `aptos move query`
     #[arg(long, group = "cmd")]
     dump_call_graph: bool,
-
-    /// Dump the dependency graph(s) from bytecode, which should only be used together with `aptos move query`
+    /// Check the type of the bytecode (`script`, `module`, or `unknown`), which should only be used together with `aptos move query`
     #[arg(long, group = "cmd")]
-    dump_dep_graph: bool,
+    check_bytecode_type: bool,
 }
 
 impl QuerierOptions {
-    //function to check if any query command has been provided
+    // check if any query command is provided
     pub fn has_any_true(&self) -> bool {
-        self.dump_call_graph || self.dump_dep_graph
+        self.dump_call_graph || self.check_bytecode_type
     }
-
-    //function to get a proper extension for the query results
+    // get a proper extension for the query results
     pub fn extension(&self) -> &'static str {
         if self.dump_call_graph {
             return CG_EXTENSION;
         }
-        if self.dump_dep_graph{
-            return DEP_EXTENSION;
+        if self.check_bytecode_type{
+            return TYPE_EXTENSION;
         }
        UNKNOWN_EXTENSION
     }
 }
 
-enum BytecodeType {
-    Module(CompiledModule),
-    Script(CompiledScript),
-}
-
-/// Represents an instance of a querier. The querier can ...
+/// Represents an instance of a querier. The querier now supports dumping call graphs and checking bytecode tyoe
 pub struct Querier {
     options: QuerierOptions,
     bytecode_bytes: Vec<u8>,
-    bytecode_type: Option<BytecodeType>,
-    call_graph: DiGraphMap<FunctionHandleIndex, ()>,
 }
-
 
 impl Querier {
     /// Creates a new querier.
@@ -66,65 +69,237 @@ impl Querier {
         Self {
             options,
             bytecode_bytes,
-            bytecode_type: None,
-            call_graph: DiGraphMap::new(),
         }
     }
 
     ///Main interface to run the query actions
-    pub fn query(&mut self) -> Result<String> {
-
-        //Determine the bytecode type
-        self.bytecode_type = if let Ok(script) = CompiledScript::deserialize(&self.bytecode_bytes) {
-            println!("This is a script");
-            Some(BytecodeType::Script(script))
-        } else if let Ok(module) = CompiledModule::deserialize(&self.bytecode_bytes) {
-            println!("This is a module");
-            Some(BytecodeType::Module(module))
+    pub fn query(&self) -> Result<String> {
+        let module: CompiledModule;
+        let script: CompiledScript;
+        //Get a binary view of the bytecode
+        let bytecode = if let Ok(bytecode) = CompiledScript::deserialize(&self.bytecode_bytes) {
+            script = bytecode;
+            BinaryIndexedView::Script(&script)
+        } else if let Ok(bytecode) = CompiledModule::deserialize(&self.bytecode_bytes) {
+            module = bytecode;
+            BinaryIndexedView::Module(&module)
         } else {
-            None
+            return Err(anyhow!(
+                "Query Error: The bytecode cannot be resolved as either a module or a script"
+            ));
         };
 
-        // Create a binary indexed view for the bytecode bytes
-        let bytecode = match &self.bytecode_type {
-            Some(BytecodeType::Module(module)) => BinaryIndexedView::Module(module),
-            Some(BytecodeType::Script(script)) => BinaryIndexedView::Script(script),
-            _ => return Err(Error::msg("Failed to deserialize bytecode as either a module or script")),
-        };
         if self.options.dump_call_graph {
-            println!("dump_call_graph is called");
-            return self.dump_call_graph(bytecode);
+            let cgbuider = CGBuilder::new(bytecode);
+            return cgbuider.dump_call_graph();
         }
-        Ok("cfg".to_string())
+
+        if self.options.check_bytecode_type {
+            let btchecker = BytecodeTypeChecker::new(bytecode);
+            return btchecker.get_bytecode_type();
+        }
+
+        unreachable!("Not supported");
+
     }
 
-    fn dump_call_graph(&self, bytecode: BinaryIndexedView) -> Result<String> {
+}
 
-        let function_defs: Vec<String> = match bytecode {
+pub struct BytecodeTypeChecker<'view> {
+    bytecode: BinaryIndexedView<'view>,
+}
 
+impl<'view> BytecodeTypeChecker<'view>{
+
+    pub fn new(bytecode: BinaryIndexedView<'view>) ->Self {
+        Self {
+            bytecode,
+        }
+    }
+
+    pub fn get_bytecode_type(&self) -> Result<String> {
+        match &self.bytecode {
+            BinaryIndexedView::Script(_) => {
+                Ok(String::from(SCRIPT_CODE))
+            }
+            BinaryIndexedView::Module(_) => {
+                Ok(String::from(MODULE_CODE))
+            }
+            _ => {
+                Ok(String::from(UNKNOWN_CODE))
+            }
+        }
+    }
+}
+
+// node structure for call graphs
+#[derive(Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
+pub struct CGNode{
+    func_sig: String,
+}
+
+impl std::fmt::Debug for CGNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Print nothing here to avoid the default label.
+        write!(f, "")
+    }
+}
+
+pub struct QueryGraph<T: Eq + Clone + Hash>{
+    nodes: HashMap<T, NodeIndex>,
+    graph: DiGraph<T, ()>,
+}
+
+impl<T: Eq + Clone + Hash> QueryGraph<T> {
+    pub fn new() -> Self {
+       Self{
+        nodes: HashMap::new(),
+        graph: DiGraph::new(),
+       }
+    }
+
+    fn add_node(&mut self, val: T) {
+        if !self.nodes.contains_key(&val){
+            let node_index = self.graph.add_node(val.clone());
+            self.nodes.insert(val, node_index);
+        }
+    }
+
+    fn add_edge(&mut self, src: T, dst: T) {
+        if let (Some(src_index), Some(dst_index)) = (self.nodes.get(&src), self.nodes.get(&dst)) {
+            self.graph.add_edge(*src_index, *dst_index, ());
+        }
+    }
+}
+
+pub struct CGBuilder<'view> {
+    bytecode: BinaryIndexedView<'view>,
+}
+
+impl<'view> CGBuilder<'view>{
+    pub fn new(bytecode: BinaryIndexedView<'view>) ->Self {
+        Self {
+            bytecode,
+        }
+    }
+    fn format_function_sig(&self, entry_modifier: &str,
+        native_modifier: &str, visibility_modifier: &str,
+        module_name: &str, func_name: &str, ty_params: &str, params: &str,
+        ret_type: &str) -> String {
+            format!("{entry_modifier} {native_modifier} {visibility_modifier} {module_name}::{func_name}{ty_params}({params}){ret_type}")
+    }
+
+    // code mostly copied from the move disassembler code
+    fn format_sig_token(&self, token: &SignatureToken) -> String {
+        match token {
+            SignatureToken::Bool => "bool".to_string(),
+            SignatureToken::U8 => "u8".to_string(),
+            SignatureToken::U16 => "u16".to_string(),
+            SignatureToken::U32 => "u32".to_string(),
+            SignatureToken::U64 => "u64".to_string(),
+            SignatureToken::U128 => "u128".to_string(),
+            SignatureToken::U256 => "u256".to_string(),
+            SignatureToken::Address => "address".to_string(),
+            SignatureToken::Signer => "signer".to_string(),
+            SignatureToken::Vector(inner) => format!("vector<{}>", self.format_sig_token(inner)),
+            SignatureToken::Struct(idx) => self.bytecode.identifier_at(self.bytecode.struct_handle_at(*idx).name).to_string(),
+            SignatureToken::TypeParameter(idx) => format!("T{}", idx),
+            SignatureToken::StructInstantiation(idx, type_args) => {
+                let args: Vec<String> = type_args.iter().map(|token| self.format_sig_token(token)).collect();
+                format!("struct_instantiation({:?}, <{}>)", idx, args.join(", "))
+            },
+            SignatureToken::Reference(sig_tok) => format!(
+                "&{}",
+                self.format_sig_token(&*sig_tok)
+            ),
+            _ => "unknown".to_string(),
+        }
+    }
+
+    fn disassemble_instruction(&self,  instruction: &Bytecode) -> Option<FunctionHandleIndex> {
+        match instruction {
+            Bytecode::Call(method_idx) => Some(*method_idx),
+            _ => None,
+        }
+    }
+
+    fn get_child_functions(&self, code: Option<&CodeUnit>) -> Vec<FunctionHandleIndex>{
+        match code {
+            Some(code) => {
+                code.code
+                .iter()
+                .filter_map(|inst| self.disassemble_instruction(inst)) // returns Option<FunctionHandleIndex>
+                .collect::<Vec<FunctionHandleIndex>>()
+            },
+            None => Vec::<FunctionHandleIndex>::new(),
+        }
+    }
+
+    fn dump_script_call_graph(&self, script: &CompiledScript) -> Result<QueryGraph<CGNode>> {
+        let mut call_graph = QueryGraph::<CGNode>::new();
+
+        // add the entry function node
+        let entry_modifier = ENTRY_MODIFIER;
+        let native_modifier: &str = EMPTY;
+        let visibility_modifier = EMPTY;
+        let module_name = SCRIPT_MODULE;
+        let func_name = MAIN_FUNCTION;
+        let ty_params = EMPTY;
+        let params : Vec<String>= self.bytecode.signature_at(script.parameters).0.iter().map(|token|self.format_sig_token(token)).collect();
+        let ret_type = EMPTY;
+        let script_entry_node = CGNode{func_sig :
+            self.format_function_sig(entry_modifier, native_modifier, visibility_modifier, module_name, func_name, ty_params, params.join(" ").as_str(), ret_type)};
+
+        call_graph.add_node(script_entry_node.clone());
+
+        let child_funcs = self.get_child_functions(Some(&script.code));
+
+        child_funcs.iter()
+        .for_each(|func_idx| {
+            let function_handle = script.function_handle_at(*func_idx);
+            let module_handle = script.module_handle_at(function_handle.module);
+
+            let entry_modifier = EMPTY;
+            let native_modifier: &str = EMPTY;
+            let visibility_modifier = EMPTY;
+            let module_id = script.module_id_for_handle(module_handle);
+            let module_name = module_id.name.as_str();
+            let func_name = script.identifier_at(function_handle.name).as_str();
+            let ty_params = EMPTY;
+            let params: Vec<String>= self.bytecode.signature_at(function_handle.parameters).0.iter().map(|token|self.format_sig_token(token)).collect();
+            let ret_type: Vec<String>= self.bytecode.signature_at(function_handle.return_).0.iter().map(|token|self.format_sig_token(token)).collect();
+            let child_node = CGNode{func_sig :
+                self.format_function_sig(entry_modifier, native_modifier, visibility_modifier, module_name, func_name, ty_params, params.join(" ").as_str(), ret_type.join(" ").as_str())};
+            call_graph.add_node(child_node.clone());
+            call_graph.add_edge(script_entry_node.clone(), child_node.clone());
+        });
+
+        Ok(call_graph)
+    }
+
+    fn dump_module_call_graph(&self) -> QueryGraph<CGNode> {
+        let call_graph = QueryGraph::<CGNode>::new();
+
+        call_graph
+    }
+
+    fn dump_call_graph(&self) -> Result<String> {
+       let call_graph: QueryGraph<CGNode> = match &self.bytecode {
             BinaryIndexedView::Script(script) => {
-
-            println!("Script fun size: {}", script.function_handles.len());
-
-            script.function_handles.iter()
-            .enumerate()
-            .map(|(index, function_handle)| {
-                    Ok(bytecode.identifier_at(function_handle.name).as_str().to_string() + "Hello")
-                })
-                .collect::<Result<Vec<String>>>()?},
-
-            BinaryIndexedView::Module(module) => {
-                println!("Module fun size: {}", module.function_defs.len());
-                (0..module.function_defs.len())
-                .map(|i| {
-                    let function_definition_index = FunctionDefinitionIndex(i as TableIndex);
-                    let function_definition = bytecode.function_def_at(function_definition_index);
-
-                    let function_handle = bytecode.function_handle_at(function_definition.unwrap().function);
-                    Ok(bytecode.identifier_at(function_handle.name).as_str().to_string())
-                })
-                .collect::<Result<Vec<String>>>()?},
+                self.dump_script_call_graph(*script)?
+            }
+            BinaryIndexedView::Module(_) => {
+                self.dump_module_call_graph()
+            }
         };
-        Ok(function_defs.join(" "))
+
+    let dot = Dot::with_attr_getters(
+        &call_graph.graph,
+        &[Config::EdgeNoLabel],
+        &|_graph, _| "".to_string(),
+        &|_graph, (_, node)| format!("label=\"{}\"", node.func_sig),
+    );
+
+        Ok(format!("{:?}", dot))
     }
 }
