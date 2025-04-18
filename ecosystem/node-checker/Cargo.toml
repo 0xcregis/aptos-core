@@ -26,8 +26,6 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }
-poem = { workspace = true }
-poem-openapi = { workspace = true }
 prometheus-parse = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

@@ -14,7 +14,5 @@ rust-version = { workspace = true }
 
 [dependencies]
 percent-encoding = { workspace = true }
-poem = { workspace = true }
-poem-openapi = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

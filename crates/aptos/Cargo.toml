@@ -89,7 +89,6 @@ move-unit-test = { workspace = true, features = ["debugging"] }
 move-vm-runtime = { workspace = true, features = ["testing"] }
 open = { workspace = true }
 pathsearch = { workspace = true }
-poem = { workspace = true }
 processor = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
