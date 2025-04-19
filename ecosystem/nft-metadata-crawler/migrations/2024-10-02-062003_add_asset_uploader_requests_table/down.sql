@@ -1,2 +1,0 @@
-DROP INDEX IF EXISTS asset_uploader_status_code_inserted_at;
-DROP TABLE IF EXISTS nft_metadata_crawler.asset_uploader_request_statuses;
