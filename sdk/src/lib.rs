@@ -30,8 +30,4 @@ pub mod move_types {
     pub use move_core_types::*;
 }
 
-pub mod rest_client {
-    pub use aptos_rest_client::*;
-}
-
 pub mod types;
