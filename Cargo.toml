@@ -30,7 +30,6 @@ members = [
     "crates/aptos-inspection-service",
     "crates/aptos-jwk-consensus",
     "crates/aptos-keygen",
-    "crates/aptos-ledger",
     "crates/aptos-localnet",
     "crates/aptos-log-derive",
     "crates/aptos-logger",
