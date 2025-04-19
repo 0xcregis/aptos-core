@@ -13,7 +13,6 @@ members = [
     "consensus/consensus-types",
     "consensus/safety-rules",
     "crates/aptos-admin-service",
-    "crates/aptos-api-tester",
     "crates/aptos-bcs-utils",
     "crates/aptos-bitvec",
     "crates/aptos-build-info",
@@ -25,7 +24,6 @@ members = [
     "crates/aptos-dkg",
     "crates/aptos-drop-helper",
     "crates/aptos-enum-conversion-derive",
-    "crates/aptos-genesis",
     "crates/aptos-github-client",
     "crates/aptos-id-generator",
     "crates/aptos-infallible",
@@ -72,24 +70,6 @@ members = [
     "crates/validator-transaction-pool",
     "devtools/aptos-cargo-cli",
     "dkg",
-    "ecosystem/indexer-grpc/indexer-grpc-cache-worker",
-    "ecosystem/indexer-grpc/indexer-grpc-data-service",
-    "ecosystem/indexer-grpc/indexer-grpc-data-service-v2",
-    "ecosystem/indexer-grpc/indexer-grpc-file-checker",
-    "ecosystem/indexer-grpc/indexer-grpc-file-store",
-    "ecosystem/indexer-grpc/indexer-grpc-file-store-backfiller",
-    "ecosystem/indexer-grpc/indexer-grpc-fullnode",
-    "ecosystem/indexer-grpc/indexer-grpc-in-memory-cache-benchmark",
-    "ecosystem/indexer-grpc/indexer-grpc-manager",
-    "ecosystem/indexer-grpc/indexer-grpc-server-framework",
-    "ecosystem/indexer-grpc/indexer-grpc-table-info",
-    "ecosystem/indexer-grpc/indexer-grpc-utils",
-    "ecosystem/indexer-grpc/indexer-test-transactions",
-    "ecosystem/indexer-grpc/indexer-transaction-generator",
-    "ecosystem/indexer-grpc/transaction-filter",
-    "ecosystem/nft-metadata-crawler",
-    "ecosystem/node-checker",
-    "ecosystem/node-checker/fn-check-client",
     "execution/block-partitioner",
     "execution/executor",
     "execution/executor-benchmark",
@@ -254,12 +234,10 @@ aptos-bounded-executor = { path = "crates/bounded-executor" }
 aptos-block-executor = { path = "aptos-move/block-executor" }
 aptos-bitvec = { path = "crates/aptos-bitvec" }
 aptos-build-info = { path = "crates/aptos-build-info" }
-aptos-cached-packages = { path = "aptos-move/framework/cached-packages" }
 aptos-channels = { path = "crates/channel" }
 aptos-cli-common = { path = "crates/aptos-cli-common" }
 aptos-collections = { path = "crates/aptos-collections" }
 aptos-compression = { path = "crates/aptos-compression" }
-aptos-consensus = { path = "consensus" }
 aptos-consensus-notifications = { path = "state-sync/inter-component/consensus-notifications" }
 aptos-consensus-types = { path = "consensus/consensus-types" }
 aptos-config = { path = "config" }
