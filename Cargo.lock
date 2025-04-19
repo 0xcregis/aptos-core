@@ -4463,7 +4463,6 @@ dependencies = [
  "passkey-authenticator",
  "passkey-client",
  "passkey-types",
- "poem-openapi",
  "poem-openapi-derive",
  "proptest",
  "proptest-derive",
