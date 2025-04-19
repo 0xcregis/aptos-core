@@ -50,7 +50,7 @@ impl From<RSA_JWK> for JWKMoveStruct {
 }
 
 /// The JWK type that can be converted from/to `JWKMoveStruct` but easier to use in rust.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Union)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JWK {
     RSA(RSA_JWK),
     Unsupported(UnsupportedJWK),

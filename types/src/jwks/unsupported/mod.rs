@@ -10,7 +10,7 @@ use std::fmt::{Debug, Formatter};
 
 /// Move type `0x1::jwks::UnsupportedJWK` in rust.
 /// See its doc in Move for more details.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Object)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnsupportedJWK {
     pub id: Vec<u8>,
     pub payload: Vec<u8>,
